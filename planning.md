@@ -1,63 +1,60 @@
-# TakeMeter — Planning
+## Evaluation Metrics
 
-## Community
-- Chosen community: r/leagueoflegends
-- Why this community: Active, text-heavy community with highly varied discourse quality. Members range from casual players making jokes to veterans citing patch history and game mechanics. The analysis vs. opinion distinction is meaningful and recognizable to regulars in this community.
+Accuracy alone is insufficient for this task for two reasons. First, with
+three labels, a model that predicts the majority class every time would still
+achieve ~36% accuracy — accuracy doesn't reveal whether the model learned all
+three distinctions. Second, the labels are not equally important: a classifier
+that learns analysis and opinion but completely ignores noise is useless for
+the intended purpose of sorting community discourse.
 
-## Label taxonomy (3 labels)
+The right metrics are:
 
-| Label    | Definition                                                                                      |
-|----------|-------------------------------------------------------------------------------------------------|
-| analysis | Makes a structured argument using specific, verifiable evidence — game mechanics, stats, patch history, or logical reasoning. |
-| opinion  | States a position or preference with light reasoning but no verifiable evidence to support it.  |
-| noise    | Jokes, memes, one-word reactions, or off-topic comments that contribute no substantive argument. |
+- **Per-class F1** for each label — catches cases where one class is never
+  predicted (F1 = 0) even when overall accuracy looks acceptable
+- **Confusion matrix** — reveals which specific label pairs are being confused
+  and in which direction, which is more actionable than a single accuracy number
+- **Overall accuracy** — useful for comparison against baseline but never
+  interpreted in isolation
 
-## Concrete examples per label
+## Definition of Success
 
-### analysis
-1. "Gold card cycled at a ratio of 6 blue, 3 red, 1 gold — so gold was rare, a jackpot reward. That's why it's the stun, not the red card."
-2. "Second wind lost 3 HP per 10 and Dshield lost 5 HP per 8 seconds last patch. Small numbers but they compound in long lane matchups — top lane sustain is genuinely weaker now."
+A classifier that would be genuinely useful in a real r/leagueoflegends
+community tool needs:
 
-### opinion
-1. "Red/blue = buffs, gold fits the gambler vibe way better than soccer ref logic."
-2. "I don't think chests or orbs should have champion shards — I've been playing 13 years, I don't need more blue essence."
+- Overall accuracy ≥ 0.70
+- Per-class F1 ≥ 0.60 for all three labels (no label left at zero)
 
-### noise
-1. "lmfao"
-2. "Nice try APA, but no"
+The zero-shot Groq baseline achieved 0.733 overall but noise F1 of 0.62 —
+barely clearing the bar. The fine-tuned DistilBERT at 0.400 overall and
+noise F1 of 0.00 does not meet the threshold and would not be deployed.
 
-## Edge cases & decision rules
+A key insight from the results: 200 examples was insufficient for fine-tuning
+to beat a strong zero-shot baseline on this task. The noise class in particular
+(40 training examples, highly varied short-form text) was never learned by the
+fine-tuned model.
 
-### Edge case 1: Opinion with one piece of evidence
-Post: "LeBron is overrated — his playoff win rate against top-seeded opponents is below .500."
-Could be: analysis (cites a stat) or opinion (stat is cherry-picked for effect)
-Decision rule: If the evidence is specific and verifiable AND forms the backbone of the argument → analysis. If the evidence is decorative — selected to sound credible but not genuinely reasoning — → opinion. One cherry-picked stat with accusatory framing = opinion.
+## AI Tool Plan
 
-### Edge case 2: Joke with a real point inside
-Post: "Well in rugby a yellow card puts you in a temporary time out which is more close to a stun."
-Could be: noise (casual tone) or analysis (makes a valid cross-game comparison)
-Decision rule: If the core claim could stand alone as a reasonable argument even without the humor → label by the argument, not the tone. This one = analysis.
+### Label stress-testing
 
-### Edge case 3: News post with added commentary
-Post: "Zeyzal returns to Shopify Rebellion. Good move, he was wasted on that roster last split."
-Could be: noise (just a link) or opinion (added commentary)
-Decision rule: If the poster adds any evaluative claim beyond the factual news → opinion. Pure link drops with no commentary → noise.
+Claude was used to generate boundary examples between analysis and opinion
+during taxonomy design. Posts that cited one specific stat with accusatory
+framing (e.g. cherry-picked winrate data) were used to sharpen the decision
+rule: if evidence forms the backbone of the argument it is analysis; if it
+is decorative it is opinion.
 
-## Data collection plan
-- Source: r/leagueoflegends posts and comment threads
-- How collected: Manual copy from Reddit — post titles, bodies, and individual comments
-- Target: 200+ examples (aim for ~70 per label for balanced distribution)
+### Annotation assistance
 
-## Label distribution target
-| Label    | Target count | % of dataset |
-|----------|-------------|--------------|
-| analysis | ~70         | 35%          |
-| opinion  | ~70         | 35%          |
-| noise    | ~70         | 30%          |
+No LLM pre-labeling was used. All 200 examples were labeled manually using
+the decision rules in the taxonomy section above. Claude was used as a
+collaborative labeling partner during collection sessions — posts were
+discussed and labeled together, with final label decisions made by the
+annotator. This is disclosed here per the AI usage policy.
 
-## Label distribution (fill after annotation)
-| Label    | Actual count | % of dataset |
-|----------|-------------|--------------|
-| analysis |             |              |
-| opinion  |             |              |
-| noise    |             |              |
+### Failure analysis
+
+After fine-tuning, wrong predictions were reviewed with Claude to identify
+systematic patterns. Key finding: the model confused analysis and opinion in
+both directions for posts with specific but opinonated framing, and failed
+to learn noise entirely — predicting it zero times on the test set. This
+pattern was verified by manually re-reading all 18 wrong predictions.
